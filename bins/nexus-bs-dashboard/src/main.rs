@@ -100,11 +100,8 @@ fn main() {
             .or_else(|| dash_cfg.as_ref().map(|cfg| cfg.port))
             .unwrap_or(8080),
         config_path,
-        static_dir: args
-            .static_dir
-            .or_else(|| non_empty_env("NEXUS_BS_DASHBOARD_STATIC_DIR"))
-            .or_else(|| dash_cfg.as_ref().and_then(|cfg| cfg.static_dir.clone()))
-            .or_else(|| Some("dashboard".to_string())),
+        // Dark-dashboard-only build: always use the embedded dashboard, never the file-based assets.
+        static_dir: None,
         source_dir: dash_cfg.as_ref().and_then(|cfg| cfg.source_dir.clone()),
         auth: dash_cfg.as_ref().and_then(|cfg| {
             if cfg.auth_enabled {
