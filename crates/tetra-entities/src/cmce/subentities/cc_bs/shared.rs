@@ -73,6 +73,7 @@ impl CcBsSubentity {
             pending_group_tx_ceased_tail_drains: HashMap::new(),
             pending_group_floor_activations: HashMap::new(),
             pending_network_group_readies: HashMap::new(),
+            pending_announcement_readies: HashMap::new(),
             pending_individual_connect_acks: HashMap::new(),
             pending_network_individual_connects: HashMap::new(),
             pending_individual_releases: HashMap::new(),
@@ -251,6 +252,7 @@ impl CcBsSubentity {
                 + self.pending_group_tx_ceased_tail_drains.len()
                 + self.pending_group_floor_activations.len()
                 + self.pending_network_group_readies.len()
+                + self.pending_announcement_readies.len()
                 + self.pending_individual_connect_acks.len()
                 + self.pending_individual_releases.len()
                 + 4,
@@ -1833,6 +1835,166 @@ impl CcBsSubentity {
             dest: TetraEntity::Brew,
             msg: SapMsgInner::CmceCallControl(CallControl::NetworkCallReady {
                 brew_uuid: pending.brew_uuid,
+                call_id: pending.call_id,
+                ts: pending.ts,
+                usage: pending.usage,
+            }),
+        });
+    }
+
+    pub(super) fn queue_announcement_ready(
+        &mut self,
+        call_id: u16,
+        source_issi: u32,
+        dest_gssi: u32,
+        ts: u8,
+        usage: u8,
+        reporters: Vec<TxReporter>,
+    ) {
+        if let Some(pending) = self.pending_announcement_readies.remove(&call_id) {
+            tracing::debug!(
+                "CMCE: replacing pending announcement ready call_id={} gssi={} ts={} source ISSI {} -> {}",
+                call_id,
+                pending.dest_gssi,
+                pending.ts,
+                pending.source_issi,
+                source_issi
+            );
+        }
+        self.pending_announcement_readies.insert(
+            call_id,
+            PendingAnnouncementReady {
+                call_id,
+                source_issi,
+                dest_gssi,
+                ts,
+                usage,
+                reporters,
+                started_at: self.dltime,
+            },
+        );
+    }
+
+    pub(super) fn cancel_announcement_ready(&mut self, call_id: u16, reason: &str) -> bool {
+        if let Some(pending) = self.pending_announcement_readies.remove(&call_id) {
+            tracing::debug!(
+                "CMCE: cancelling pending announcement ready call_id={} gssi={} because {}",
+                pending.call_id,
+                pending.dest_gssi,
+                reason
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn cancel_announcement_ready_for_gssi(&mut self, gssi: u32) {
+        let stale: Vec<u16> = self
+            .pending_announcement_readies
+            .iter()
+            .filter(|(_, pending)| pending.dest_gssi == gssi)
+            .map(|(&call_id, _)| call_id)
+            .collect();
+        for call_id in stale {
+            self.cancel_announcement_ready(call_id, "announcement group state changed");
+        }
+    }
+
+    pub(super) fn drain_pending_announcement_readies(&mut self, queue: &mut MessageQueue) {
+        let ready: Vec<(u16, bool)> = self
+            .pending_announcement_readies
+            .iter()
+            .filter_map(|(&call_id, pending)| {
+                if pending.reporters.is_empty() || pending.reporters.iter().all(TxReporter::is_transmitted) {
+                    Some((call_id, true))
+                } else if pending.reporters.iter().all(TxReporter::is_in_final_state)
+                    || pending.started_at.age(self.dltime) >= NETWORK_GROUP_READY_PENDING_TIMEOUT_TIMESLOTS
+                {
+                    Some((call_id, false))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (call_id, was_transmitted) in ready {
+            let Some(pending) = self.pending_announcement_readies.remove(&call_id) else {
+                continue;
+            };
+
+            if was_transmitted {
+                self.complete_announcement_ready(queue, pending);
+                continue;
+            }
+
+            tracing::warn!(
+                "CMCE: releasing announcement group call_id={} gssi={} because RF setup signalling was not transmitted before ready guard",
+                pending.call_id,
+                pending.dest_gssi
+            );
+            self.release_group_call(queue, pending.call_id, DisconnectCause::AcknowledgedServiceNotComplete);
+        }
+    }
+
+    fn complete_announcement_ready(&mut self, queue: &mut MessageQueue, pending: PendingAnnouncementReady) {
+        let Some(call) = self.active_calls.get(&pending.call_id) else {
+            tracing::debug!(
+                "CMCE: dropping pending announcement ready call_id={} gssi={}; call no longer active",
+                pending.call_id,
+                pending.dest_gssi
+            );
+            return;
+        };
+
+        if !matches!(call.origin, CallOrigin::Announcement)
+            || !call.is_current_speaker(pending.source_issi)
+            || call.dest_gssi != pending.dest_gssi
+            || call.ts != pending.ts
+            || call.usage != pending.usage
+        {
+            tracing::debug!(
+                "CMCE: dropping stale announcement ready call_id={} gssi={} source={} ts={}; active call is origin={:?} source={} gssi={} ts={}",
+                pending.call_id,
+                pending.dest_gssi,
+                pending.source_issi,
+                pending.ts,
+                call.origin,
+                call.source_issi,
+                call.dest_gssi,
+                call.ts
+            );
+            return;
+        }
+
+        tracing::info!(
+            "CMCE: announcement group ready call_id={} source ISSI {} GSSI {} ts={} after RF control signalling",
+            pending.call_id,
+            pending.source_issi,
+            pending.dest_gssi,
+            pending.ts
+        );
+
+        Self::signal_umac_dl_media_source(queue, pending.ts, CircuitDlMediaSource::LocalAnnouncement);
+
+        queue.push_back(SapMsg {
+            sap: Sap::Control,
+            src: TetraEntity::Cmce,
+            dest: TetraEntity::Umac,
+            msg: SapMsgInner::CmceCallControl(CallControl::FloorGranted {
+                call_id: pending.call_id,
+                source_issi: pending.source_issi,
+                dest_gssi: pending.dest_gssi,
+                ts: pending.ts,
+            }),
+        });
+
+        queue.push_back(SapMsg {
+            sap: Sap::Control,
+            src: TetraEntity::Cmce,
+            dest: TetraEntity::Voicegate,
+            msg: SapMsgInner::CmceCallControl(CallControl::AnnouncementReady {
+                gssi: pending.dest_gssi,
                 call_id: pending.call_id,
                 ts: pending.ts,
                 usage: pending.usage,

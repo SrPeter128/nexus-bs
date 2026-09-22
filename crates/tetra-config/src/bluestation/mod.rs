@@ -42,5 +42,8 @@ pub use sec_security::*;
 pub mod sec_wx;
 pub use sec_wx::*;
 
+pub mod sec_announcement;
+pub use sec_announcement::*;
+
 pub mod state;
 pub use state::*;

@@ -266,3 +266,27 @@ interval_multiframes = 96
 protocol_id = 220
 text_coding_scheme = "LATIN"
 text = "Nexus-BS"
+
+###############################################################################
+# Announcement voice gate: dedicated subscribable talk group fed with live
+# external audio (e.g. a public radio stream). While speech is detected on
+# the active stream, the BS starts a group call on `gssi` and subscribers
+# hear the live audio as ordinary TETRA group speech. Disabled by default.
+#
+# [announcement]
+# enabled = true
+# gssi = 100          # dedicated announcement talk group
+# issi = 255          # calling party ISSI shown on subscriber terminals
+# active_stream = "main"
+# vad_start_dbfs = -40.0     # RMS level that starts an announcement
+# vad_stop_dbfs = -50.0      # hysteresis level that ends it
+# vad_start_ms = 150         # voiced time before the call starts
+# silence_timeout_ms = 4000  # silence before the call ends
+# stream_loss_grace_ms = 15000
+# max_call_duration_secs = 600
+#
+# [[announcement.streams]]
+# label = "main"
+# url = "https://example.org/stream.mp3"
+# # auth_kind = "bearer"        # or "header" / "query"
+# # auth_value = "secret"       # header name: auth_name

@@ -43,6 +43,7 @@ impl CcBsSubentity {
         self.drain_pending_group_tx_ceased_tail_drains(queue);
         self.drain_pending_group_floor_activations(queue);
         self.drain_pending_network_group_readies(queue);
+        self.drain_pending_announcement_readies(queue);
         self.drain_pending_individual_disconnect_tail_drains(queue);
         self.drain_pending_group_releases(queue);
         self.drain_pending_individual_releases(queue);

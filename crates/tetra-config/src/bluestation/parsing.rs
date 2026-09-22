@@ -14,7 +14,10 @@ use toml::Value;
 use crate::bluestation::sec_cell::{
     CfgNeighborCellCa, SdsCommandControlDto, WapIpDto, sds_command_control_dto_to_cfg, validate_neighbor_sndcp_service_is_not_advertised,
 };
-use crate::bluestation::{CellInfoDto, CfgControlDto, NetInfoDto, apply_control_patch, cell_dto_to_cfg, net_dto_to_cfg};
+use crate::bluestation::{
+    CellInfoDto, CfgAnnouncementDto, CfgControlDto, NetInfoDto, apply_announcement_patch, apply_control_patch, cell_dto_to_cfg,
+    net_dto_to_cfg,
+};
 
 use super::config::{StackConfig, StackMode};
 use super::sec_brew::{CfgBrewDto, apply_brew_patch};
@@ -145,6 +148,13 @@ pub fn from_toml_str(toml_str: &str) -> Result<StackConfig, Box<dyn std::error::
         }
     }
 
+    // Optional announcement section
+    if let Some(ref announcement) = root.announcement {
+        if !announcement.extra.is_empty() {
+            return Err(format!("Unrecognized fields in announcement config: {:?}", sorted_keys(&announcement.extra)).into());
+        }
+    }
+
     // Build cell config, then inject the separately-parsed neighbor cells and sds_command_control
     let mut cell_cfg = cell_dto_to_cfg(root.cell_info)?;
     cell_cfg.neighbor_cells_ca = neighbor_cells_ca;
@@ -170,6 +180,7 @@ pub fn from_toml_str(toml_str: &str) -> Result<StackConfig, Box<dyn std::error::
         health: apply_health_patch(root.health.unwrap_or_default())?,
         security: apply_security_patch(root.security.unwrap_or_default()),
         wx_service: apply_wx_service_patch(root.wx_service.unwrap_or_default()),
+        announcement: None,
     };
 
     if let Some(brew) = root.brew {
@@ -186,6 +197,10 @@ pub fn from_toml_str(toml_str: &str) -> Result<StackConfig, Box<dyn std::error::
 
     if let Some(command) = root.command {
         cfg.control = Some(apply_control_patch(command)?);
+    }
+
+    if let Some(announcement) = root.announcement {
+        cfg.announcement = Some(apply_announcement_patch(announcement)?);
     }
 
     Ok(cfg)
@@ -235,6 +250,7 @@ struct TomlConfigRoot {
     security: Option<CfgSecurityDto>,
     #[serde(rename = "wx_service")]
     wx_service: Option<CfgWxServiceDto>,
+    announcement: Option<CfgAnnouncementDto>,
 
     #[serde(flatten)]
     extra: HashMap<String, Value>,

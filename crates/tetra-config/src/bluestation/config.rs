@@ -9,6 +9,7 @@ use tetra_core::freqs::FreqInfo;
 
 use crate::bluestation::{CfgCellInfo, CfgControl, CfgHealth, CfgNetInfo, CfgPhyIo, CfgSecurity, CfgWxService, PhyBackend, StackState};
 
+use super::sec_announcement::CfgAnnouncement;
 use super::sec_brew::CfgBrew;
 use super::sec_dashboard::CfgDashboard;
 use super::sec_telemetry::CfgTelemetry;
@@ -93,6 +94,10 @@ pub struct StackConfig {
 
     /// Built-in WX/METAR SDS service configuration
     pub wx_service: CfgWxService,
+
+    /// Local announcement voice gate (dedicated subscribable talk group fed
+    /// with live external audio). None = disabled.
+    pub announcement: Option<CfgAnnouncement>,
 }
 
 impl StackConfig {

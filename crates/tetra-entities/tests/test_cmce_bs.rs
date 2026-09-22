@@ -17909,3 +17909,354 @@ fn test_duplex_p2p_pending_release_closes_after_bounded_timeout() {
         "D-RELEASE delivery timeout should close the stuck P2P circuit locally"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Announcement voice gate: dedicated subscribable talk group fed with live
+// external audio (BS-originated group speech).
+// ---------------------------------------------------------------------------
+
+const ANN_GSSI: u32 = 500;
+const ANN_ISSI: u32 = 55_000;
+
+fn announcement_config_for(gssi: u32) -> tetra_config::bluestation::StackConfig {
+    let mut config = ComponentTest::get_default_test_config(StackMode::Bs);
+    config.announcement = Some(tetra_config::bluestation::CfgAnnouncement {
+        enabled: true,
+        gssi,
+        issi: ANN_ISSI,
+        streams: vec![],
+        active_stream: String::new(),
+        vad_start_dbfs: -40.0,
+        vad_stop_dbfs: -50.0,
+        vad_start_ms: 150,
+        silence_timeout_ms: 4000,
+        stream_loss_grace_ms: 15000,
+        max_call_duration_secs: 600,
+    });
+    config
+}
+
+fn announcement_start_msg(gssi: u32) -> SapMsg {
+    SapMsg {
+        sap: Sap::Control,
+        src: TetraEntity::Voicegate,
+        dest: TetraEntity::Cmce,
+        msg: SapMsgInner::CmceCallControl(CallControl::AnnouncementStart { gssi, issi: ANN_ISSI }),
+    }
+}
+
+fn announcement_stop_msg(gssi: u32) -> SapMsg {
+    SapMsg {
+        sap: Sap::Control,
+        src: TetraEntity::Voicegate,
+        dest: TetraEntity::Cmce,
+        msg: SapMsgInner::CmceCallControl(CallControl::AnnouncementStop { gssi }),
+    }
+}
+
+fn find_announcement_rejected(msgs: &[SapMsg], gssi: u32) -> Option<tetra_saps::control::call_control::AnnouncementRejectReason> {
+    msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::CmceCallControl(CallControl::AnnouncementRejected {
+                gssi: rejected_gssi,
+                reason,
+            }) if *rejected_gssi == gssi => Some(*reason),
+            _ => None,
+        })
+}
+
+fn find_announcement_ready(msgs: &[SapMsg], gssi: u32) -> Option<(u16, u8, u8)> {
+    msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::CmceCallControl(CallControl::AnnouncementReady {
+                gssi: ready_gssi,
+                call_id,
+                ts,
+                usage,
+            }) if *ready_gssi == gssi => Some((*call_id, *ts, *usage)),
+            _ => None,
+        })
+}
+
+#[test]
+fn test_announcement_start_without_config_rejects_disabled() {
+    debug::setup_logging_verbose();
+
+    let mut test = ComponentTest::from_config(
+        ComponentTest::get_default_test_config(StackMode::Bs),
+        Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }),
+    );
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    register_subscriber(&mut test, ANN_ISSI, ANN_GSSI);
+
+    test.submit_message(announcement_start_msg(ANN_GSSI));
+    test.run_stack(Some(1));
+    let msgs = test.dump_sinks();
+
+    use tetra_saps::control::call_control::AnnouncementRejectReason;
+    assert_eq!(find_announcement_rejected(&msgs, ANN_GSSI), Some(AnnouncementRejectReason::Disabled));
+    assert_eq!(
+        msgs
+            .iter()
+            .filter(|msg| matches!(&msg.msg, SapMsgInner::LcmcMleUnitdataReq(prim) if parse_d_setup(prim).is_some()))
+            .count(),
+        0,
+        "disabled announcement must not set up a group call"
+    );
+}
+
+#[test]
+fn test_announcement_start_wrong_identity_rejects() {
+    debug::setup_logging_verbose();
+
+    let mut test = ComponentTest::from_config(
+        announcement_config_for(ANN_GSSI),
+        Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }),
+    );
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    register_subscriber(&mut test, ANN_ISSI, ANN_GSSI);
+
+    // Different GSSI than configured.
+    test.submit_message(announcement_start_msg(TEST_GSSI));
+    test.run_stack(Some(1));
+    let msgs = test.dump_sinks();
+
+    use tetra_saps::control::call_control::AnnouncementRejectReason;
+    assert_eq!(
+        find_announcement_rejected(&msgs, TEST_GSSI),
+        Some(AnnouncementRejectReason::WrongIdentity)
+    );
+}
+
+#[test]
+fn test_announcement_start_without_local_listener_rejects() {
+    debug::setup_logging_verbose();
+
+    let mut test = ComponentTest::from_config(
+        announcement_config_for(ANN_GSSI),
+        Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }),
+    );
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    // No subscriber affiliated to ANN_GSSI.
+
+    test.submit_message(announcement_start_msg(ANN_GSSI));
+    test.run_stack(Some(1));
+    let msgs = test.dump_sinks();
+
+    use tetra_saps::control::call_control::AnnouncementRejectReason;
+    assert_eq!(
+        find_announcement_rejected(&msgs, ANN_GSSI),
+        Some(AnnouncementRejectReason::NoLocalListener)
+    );
+}
+
+#[test]
+fn test_announcement_start_sets_up_group_call_and_reports_ready_after_rf() {
+    debug::setup_logging_verbose();
+
+    let mut test = ComponentTest::from_config(
+        announcement_config_for(ANN_GSSI),
+        Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }),
+    );
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    register_subscriber(&mut test, ANN_ISSI, ANN_GSSI);
+
+    test.submit_message(announcement_start_msg(ANN_GSSI));
+    test.run_stack(Some(1));
+    let setup_msgs = test.dump_sinks();
+
+    // UMAC circuit opened with the announcement media source and the
+    // announcement identity as the active/secondary address pair.
+    let circuit = setup_msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::CmceCallControl(CallControl::Open(circuit)) if msg.dest == TetraEntity::Umac => Some(circuit.clone()),
+            _ => None,
+        })
+        .expect("announcement start must open a UMAC circuit");
+    assert_eq!(circuit.dl_media_source, CircuitDlMediaSource::LocalAnnouncement);
+    assert_eq!(circuit.active_addr, Some(TetraAddress::new(ANN_GSSI, SsiType::Gssi)));
+    assert_eq!(circuit.active_secondary_addrs, vec![TetraAddress::issi(ANN_ISSI)]);
+
+    // D-SETUP toward the announcement group with the announcement ISSI as
+    // calling party, non-preemptive.
+    let d_setup = setup_msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::LcmcMleUnitdataReq(prim) => parse_d_setup(prim),
+            _ => None,
+        })
+        .expect("announcement start must broadcast D-SETUP to the group");
+    assert_eq!(d_setup.calling_party_address_ssi, Some(ANN_ISSI));
+    assert_eq!(d_setup.call_priority, 0);
+    let call_id = d_setup.call_identifier;
+
+    // Voice gate must not be ready before the RF D-SETUP was transmitted.
+    assert!(
+        find_announcement_ready(&setup_msgs, ANN_GSSI).is_none(),
+        "voice gate must wait for RF D-SETUP transmission before ready"
+    );
+
+    let reporter = first_d_setup_reporter(&setup_msgs);
+    reporter.mark_transmitted();
+    test.run_stack(Some(1));
+    let ready_msgs = test.dump_sinks();
+
+    let (ready_call_id, ts, _usage) = find_announcement_ready(&ready_msgs, ANN_GSSI)
+        .expect("announcement should report ready after D-SETUP transmission");
+    assert_eq!(ready_call_id, call_id);
+
+    // Floor granted to the announcement speaker on the announcement circuit.
+    assert!(ready_msgs.iter().any(|msg| {
+        matches!(
+            &msg.msg,
+            SapMsgInner::CmceCallControl(CallControl::FloorGranted {
+                call_id: granted_call_id,
+                source_issi,
+                dest_gssi,
+                ts: granted_ts,
+            }) if *granted_call_id == call_id
+                && *source_issi == ANN_ISSI
+                && *dest_gssi == ANN_GSSI
+                && *granted_ts == ts
+                && msg.dest == TetraEntity::Umac
+        )
+    }));
+    // UMAC switched the circuit to the announcement media source.
+    assert!(ready_msgs.iter().any(|msg| {
+        matches!(
+            &msg.msg,
+            SapMsgInner::CmceCallControl(CallControl::SetDlMediaSource {
+                ts: media_ts,
+                dl_media_source: CircuitDlMediaSource::LocalAnnouncement,
+            }) if *media_ts == ts && msg.dest == TetraEntity::Umac
+        )
+    }));
+}
+
+#[test]
+fn test_announcement_stop_releases_floor_into_hangtime_and_tears_down_on_expiry() {
+    debug::setup_logging_verbose();
+
+    let mut config = announcement_config_for(ANN_GSSI);
+    config.cell.hangtime_secs = 1;
+    let mut test = ComponentTest::from_config(config, Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }));
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    register_subscriber(&mut test, ANN_ISSI, ANN_GSSI);
+
+    test.submit_message(announcement_start_msg(ANN_GSSI));
+    test.run_stack(Some(1));
+    let setup_msgs = test.dump_sinks();
+    let d_setup = setup_msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::LcmcMleUnitdataReq(prim) => parse_d_setup(prim),
+            _ => None,
+        })
+        .expect("D-SETUP present");
+    let call_id = d_setup.call_identifier;
+    first_d_setup_reporter(&setup_msgs).mark_transmitted();
+    test.run_stack(Some(1));
+    let _ready_msgs = test.dump_sinks();
+
+    test.submit_message(announcement_stop_msg(ANN_GSSI));
+    test.run_stack(Some(1));
+    let stop_msgs = test.dump_sinks();
+
+    // EN 300 392-2 clause 14.5.2.2.1: floor release uses D-TX-CEASED; the
+    // circuit stays open during hangtime (no D-RELEASE, no UMAC close).
+    let ceased = stop_msgs
+        .iter()
+        .find_map(|msg| match &msg.msg {
+            SapMsgInner::LcmcMleUnitdataReq(prim) => parse_d_tx_ceased(prim).map(|pdu| (prim, pdu)),
+            _ => None,
+        })
+        .expect("announcement stop should emit D-TX-CEASED");
+    assert_eq!(ceased.0.main_address.ssi, ANN_GSSI);
+    assert_eq!(ceased.1.call_identifier, call_id);
+    assert_eq!(count_d_releases(&stop_msgs), 0);
+    assert_eq!(count_umac_call_ended_or_close(&stop_msgs), 0);
+    assert!(stop_msgs.iter().any(|msg| {
+        matches!(
+            &msg.msg,
+            SapMsgInner::CmceCallControl(CallControl::FloorReleased {
+                call_id: released_call_id,
+                ts: _,
+            }) if *released_call_id == call_id && msg.dest == TetraEntity::Umac
+        )
+    }));
+    // Voice gate learns the announcement ended.
+    assert!(stop_msgs.iter().any(|msg| {
+        matches!(
+            &msg.msg,
+            SapMsgInner::CmceCallControl(CallControl::AnnouncementEnded {
+                gssi: ended_gssi,
+                call_id: ended_call_id,
+            }) if *ended_gssi == ANN_GSSI && *ended_call_id == call_id && msg.dest == TetraEntity::Voicegate
+        )
+    }));
+
+    // Hangtime expiry tears the call down (default 1 s = 72 timeslots).
+    test.run_stack(Some(120));
+    let mut release_msgs = test.dump_sinks();
+    assert!(count_d_releases(&release_msgs) >= 1, "hangtime expiry must D-RELEASE the announcement call");
+    // Circuit cleanup waits for the D-RELEASE RF delivery report.
+    let reporters = extract_d_release_reporters(&mut release_msgs);
+    assert_eq!(reporters.len(), 1, "FACCH D-RELEASE should be reporter-tracked");
+    reporters[0].mark_transmitted();
+    test.run_stack(Some(1));
+    let closed_msgs = test.dump_sinks();
+    assert!(
+        count_umac_call_ended_or_close(&closed_msgs) >= 1,
+        "reporter completion must close the announcement UMAC circuit"
+    );
+}
+
+#[test]
+fn test_announcement_start_while_group_busy_rejects() {
+    debug::setup_logging_verbose();
+
+    // Announcements use the same GSSI the MS is currently calling.
+    let mut test = ComponentTest::from_config(
+        announcement_config_for(TEST_GSSI),
+        Some(TdmaTime { h: 0, m: 1, f: 1, t: 1 }),
+    );
+    test.populate_entities(
+        vec![TetraEntity::Cmce],
+        vec![TetraEntity::Mle, TetraEntity::Umac, TetraEntity::Voicegate],
+    );
+    register_subscriber(&mut test, TEST_ISSI, TEST_GSSI);
+
+    // Local MS group call on TEST_GSSI first.
+    test.submit_message(build_u_setup_msg(TEST_ISSI, TEST_GSSI));
+    test.run_stack(Some(2));
+    let _setup_msgs = test.dump_sinks();
+
+    test.submit_message(announcement_start_msg(TEST_GSSI));
+    test.run_stack(Some(1));
+    let msgs = test.dump_sinks();
+
+    use tetra_saps::control::call_control::AnnouncementRejectReason;
+    assert_eq!(
+        find_announcement_rejected(&msgs, TEST_GSSI),
+        Some(AnnouncementRejectReason::TgBusy),
+        "announcement must not steal a talk group that is already in use"
+    );
+}

@@ -31,4 +31,8 @@ pub enum TetraEntity {
 
     /// Brew protocol bridge (TetraPack/BrandMeister integration)
     Brew,
+
+    /// Local announcement voice gate: streams external live audio into a
+    /// dedicated subscribable talk group (BS-originated group speech).
+    Voicegate,
 }

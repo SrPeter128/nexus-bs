@@ -7737,3 +7737,81 @@ fn test_group_energy_saving_partial_replacement_keeps_old_owner_suspended() {
         0
     );
 }
+
+fn local_announcement_group_open_msg(gssi: u32, issi: u32, ts: u8) -> SapMsg {
+    SapMsg {
+        sap: Sap::Control,
+        src: TetraEntity::Cmce,
+        dest: TetraEntity::Umac,
+        msg: SapMsgInner::CmceCallControl(CallControl::Open(Circuit {
+            direction: Direction::Both,
+            ts,
+            peer_ts: None,
+            usage: 4,
+            circuit_mode: CircuitModeType::TchS,
+            speech_service: Some(0),
+            etee_encrypted: false,
+            dl_media_source: CircuitDlMediaSource::LocalAnnouncement,
+            active_addr: Some(TetraAddress::new(gssi, SsiType::Gssi)),
+            active_secondary_addrs: vec![TetraAddress::issi(issi)],
+        })),
+    }
+}
+
+#[test]
+fn test_local_announcement_media_source_feeds_dl_and_suppresses_ul_loopback() {
+    debug::setup_logging_verbose();
+
+    let ann_issi = 55_000u32;
+    let ann_gssi = 500u32;
+    let ann_ts = 2u8;
+    let loop_ts = 3u8;
+    let loop_gssi = 91u32;
+    let loop_issi = 1_000_001u32;
+    let start = TdmaTime { h: 0, m: 1, f: 1, t: 4 };
+
+    let mut test = ComponentTest::new(StackMode::Bs, Some(start));
+    test.populate_entities(vec![TetraEntity::Umac], vec![TetraEntity::Lmac]);
+
+    let ann_bits: Vec<u8> = (0..274).map(|idx| ((idx * 13 + 5) % 5 < 2) as u8).collect();
+    let ul_bits: Vec<u8> = (0..274).map(|idx| ((idx * 11 + 3) % 7 == 1) as u8).collect();
+
+    // Announcement circuit (group, GSSI-scoped, virtual speaker).
+    test.submit_message(local_announcement_group_open_msg(ann_gssi, ann_issi, ann_ts));
+    test.run_stack(Some(1));
+    let _ = test.dump_sinks();
+    test.submit_message(floor_granted_msg(1, ann_issi, ann_gssi, ann_ts));
+    test.run_stack(Some(1));
+    let _ = test.dump_sinks();
+
+    // Control circuit with classic local loopback on a second slot.
+    test.submit_message(group_call_open_msg(loop_gssi, loop_ts));
+    test.run_stack(Some(1));
+    let _ = test.dump_sinks();
+    test.submit_message(floor_granted_msg(2, loop_issi, loop_gssi, loop_ts));
+    test.run_stack(Some(1));
+    let _ = test.dump_sinks();
+
+    // Voice gate DL feed must be scheduled onto the announcement slot.
+    submit_dl_tmd_req(&mut test, ann_ts, ann_bits.clone(), None);
+    test.run_stack(Some(12));
+    let dl_msgs = test.dump_sinks();
+    assert_dl_tch_contains_bits(&dl_msgs, ann_ts, &ann_bits, "LocalAnnouncement DL feed must be scheduled");
+
+    // UL media on the announcement slot must NOT be looped back...
+    let _ = test.dump_sinks();
+    submit_ul_voice_frame(&mut test, ann_ts, ul_bits.clone());
+    test.run_stack(Some(12));
+    let ann_ul_msgs = test.dump_sinks();
+    assert!(
+        !collect_dl_tch_bits(&ann_ul_msgs, ann_ts).iter().any(|bits| bits == &ul_bits),
+        "LocalAnnouncement must suppress UL->DL loopback (BS is the only speaker)"
+    );
+
+    // ...while the control slot with LocalLoopback still loops UL media back.
+    let _ = test.dump_sinks();
+    submit_ul_voice_frame(&mut test, loop_ts, ul_bits.clone());
+    test.run_stack(Some(12));
+    let loop_ul_msgs = test.dump_sinks();
+    assert_dl_tch_contains_bits(&loop_ul_msgs, loop_ts, &ul_bits, "LocalLoopback control slot must loop UL media back");
+}

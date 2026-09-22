@@ -30,7 +30,7 @@ use tetra_saps::{
     SapMsg, SapMsgInner,
     control::{
         brew::{BrewSubscriberAction, MmSubscriberUpdate},
-        call_control::{CallControl, Circuit, CircuitDlMediaSource, NetworkCircuitCall},
+        call_control::{AnnouncementRejectReason, CallControl, Circuit, CircuitDlMediaSource, NetworkCircuitCall},
         enums::{circuit_mode_type::CircuitModeType, communication_type::CommunicationType},
     },
     lcmc::{
@@ -46,6 +46,7 @@ use crate::{
     cmce::components::circuit_mgr::{CircuitMgr, CircuitMgrCmd},
 };
 
+mod announcement;
 mod call;
 mod dtmf;
 mod echo;
@@ -164,6 +165,16 @@ struct PendingNetworkGroupReady {
     started_at: TdmaTime,
 }
 
+struct PendingAnnouncementReady {
+    call_id: u16,
+    source_issi: u32,
+    dest_gssi: u32,
+    ts: u8,
+    usage: u8,
+    reporters: Vec<TxReporter>,
+    started_at: TdmaTime,
+}
+
 struct PendingIndividualConnectAck {
     reporter: TxReporter,
     stage: PendingIndividualConnectAckStage,
@@ -228,6 +239,8 @@ pub struct CcBsSubentity {
     pending_group_floor_activations: HashMap<u16, PendingGroupFloorActivation>,
     /// Brew-origin group-call setup/floor deliveries waiting before Brew media activation.
     pending_network_group_readies: HashMap<u16, PendingNetworkGroupReady>,
+    /// Announcement group-call setup delivery waiting before voice gate media activation.
+    pending_announcement_readies: HashMap<u16, PendingAnnouncementReady>,
     /// Direct private-call setup delivery guards before caller authorization.
     pending_individual_connect_acks: HashMap<u16, PendingIndividualConnectAck>,
     /// Brew-bridged individual connect waiting for the local RF leg to acknowledge D-CONNECT/D-CONNECT ACK.

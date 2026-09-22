@@ -31,6 +31,7 @@ pub fn default_test_config_bs() -> StackConfig {
         health: CfgHealth::default(),
         security: CfgSecurity::default(),
         wx_service: CfgWxService::default(),
+        announcement: None,
     }
 }
 

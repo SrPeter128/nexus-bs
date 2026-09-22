@@ -116,6 +116,12 @@ impl CcBsSubentity {
             CallControl::UlInactivityTimeout { ts } => {
                 self.handle_ul_inactivity_timeout(queue, ts);
             }
+            CallControl::AnnouncementStart { gssi, issi } => {
+                self.rx_announcement_start(queue, gssi, issi);
+            }
+            CallControl::AnnouncementStop { gssi } => {
+                self.rx_announcement_stop(queue, gssi);
+            }
             _ => {
                 tracing::warn!("Unexpected CallControl message: {:?}", call_control);
             }

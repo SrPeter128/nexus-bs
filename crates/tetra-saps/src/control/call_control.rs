@@ -17,6 +17,24 @@ pub enum CircuitDlMediaSource {
     LocalParrot,
     /// Downlink media is supplied by SwMI over the network bridge (Brew/TetraPack).
     SwMI,
+    /// Downlink media is supplied by the local voice gate (announcement TG):
+    /// the BS speaks on a dedicated group with live externally-sourced audio.
+    LocalAnnouncement,
+}
+
+/// Why CMCE rejected an announcement group call start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnouncementRejectReason {
+    /// `[announcement]` section missing or disabled.
+    Disabled,
+    /// Requested GSSI/ISSI does not match the configured announcement identity.
+    WrongIdentity,
+    /// No local MS is subscribed to the announcement group.
+    NoLocalListener,
+    /// The announcement group already has an active (or pending) call.
+    TgBusy,
+    /// No free timeslot for the announcement circuit.
+    NoTimeslot,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +171,23 @@ pub enum CallControl {
     NetworkCallEnd { brew_uuid: uuid::Uuid },
     /// UL inactivity detected on a traffic timeslot.
     UlInactivityTimeout { ts: u8 },
+
+    // ---- Local announcement voice gate (dedicated subscribable talk group) ----
+    /// Voicegate -> CMCE: audio detected on the configured live stream; start
+    /// a BS-originated group call on the announcement GSSI with the configured
+    /// announcement ISSI as calling party.
+    AnnouncementStart { gssi: u32, issi: u32 },
+    /// CMCE -> Voicegate: the announcement call is established and the floor
+    /// is granted; feed TmdCircuitDataReq voice frames on this timeslot.
+    AnnouncementReady { gssi: u32, call_id: u16, ts: u8, usage: u8 },
+    /// CMCE -> Voicegate: the announcement start was rejected.
+    AnnouncementRejected { gssi: u32, reason: AnnouncementRejectReason },
+    /// Voicegate -> CMCE: release the announcement speech (silence timeout,
+    /// stream loss, operator stop, or max call duration).
+    AnnouncementStop { gssi: u32 },
+    /// CMCE -> Voicegate: the announcement call has ended; a new
+    /// AnnouncementStart may be issued again.
+    AnnouncementEnded { gssi: u32, call_id: u16 },
 
     // ---- Full-duplex individual / circuit-switched call signalling (ETSI EN 300 392-2 §14) ----
     /// CMCE -> Brew: local MS initiated a call to a non-local ISSI or PBX number.

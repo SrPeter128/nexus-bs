@@ -51,12 +51,15 @@ pub(super) fn call_timeout_to_timeslots(timeout: CallTimeout) -> Option<i32> {
 }
 
 /// Origin of a group call
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) enum CallOrigin {
     /// Local MS-initiated call
     Local { caller_addr: TetraAddress },
     /// Network-initiated call from TetraPack/Brew
     Network { brew_uuid: uuid::Uuid },
+    /// BS-originated call on the dedicated announcement talk group, fed by
+    /// the local voice gate (live external audio).
+    Announcement,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -129,17 +132,44 @@ impl ActiveCall {
             origin: CallOrigin::Network { brew_uuid },
             dest_gssi,
             source_issi,
+            ts,
+            usage,
             created_at,
             call_timeout,
             priority,
-            ts,
-            usage,
             tx_active: true,
             hangtime_start: None,
             ul_inactivity_regrant_used: false,
             queued_floor_demands: VecDeque::new(),
             queued_floor_demand_ssis: HashSet::new(),
             brew_uuid: Some(brew_uuid),
+        }
+    }
+
+    pub(super) fn new_announcement(
+        dest_gssi: u32,
+        source_issi: u32,
+        ts: u8,
+        usage: u8,
+        created_at: TdmaTime,
+        call_timeout: CallTimeout,
+        priority: u8,
+    ) -> Self {
+        Self {
+            origin: CallOrigin::Announcement,
+            dest_gssi,
+            source_issi,
+            ts,
+            usage,
+            created_at,
+            call_timeout,
+            priority,
+            tx_active: true,
+            hangtime_start: None,
+            ul_inactivity_regrant_used: false,
+            queued_floor_demands: VecDeque::new(),
+            queued_floor_demand_ssis: HashSet::new(),
+            brew_uuid: None,
         }
     }
 

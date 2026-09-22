@@ -774,7 +774,7 @@ impl UmacBs {
         }
         if matches!(
             self.channel_scheduler.ul_circuit_dl_media_source(ts),
-            CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot
+            CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot | CircuitDlMediaSource::LocalAnnouncement
         ) {
             return false;
         }
@@ -988,7 +988,7 @@ impl UmacBs {
             None => {
                 if matches!(
                     self.channel_scheduler.ul_circuit_dl_media_source(media.ul_ts),
-                    CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot
+                    CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot | CircuitDlMediaSource::LocalAnnouncement
                 ) {
                     tracing::debug!(
                         "UMAC: dropping deferred private {} ul_ts={} because {:?} supplies DL media",
@@ -3432,7 +3432,7 @@ impl UmacBs {
                     None => {
                         if matches!(
                             self.channel_scheduler.ul_circuit_dl_media_source(ts),
-                            CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot
+                            CircuitDlMediaSource::SwMI | CircuitDlMediaSource::LocalParrot | CircuitDlMediaSource::LocalAnnouncement
                         ) {
                             // Circuit call via Brew: DL comes from TetraPack, not local loopback.
                             // Suppress UL->DL reflection so the caller doesn't hear their own voice.
@@ -3939,8 +3939,13 @@ impl UmacBs {
             | CallControl::NetworkCircuitSimplexIdle { .. }
             | CallControl::NetworkCircuitMediaReady { .. }
             | CallControl::NetworkCircuitDtmf { .. }
-            | CallControl::NetworkCircuitRelease { .. } => {
-                tracing::trace!("rx_control: ignoring CMCE-Brew notification (not for UMAC)");
+            | CallControl::NetworkCircuitRelease { .. }
+            | CallControl::AnnouncementStart { .. }
+            | CallControl::AnnouncementReady { .. }
+            | CallControl::AnnouncementRejected { .. }
+            | CallControl::AnnouncementStop { .. }
+            | CallControl::AnnouncementEnded { .. } => {
+                tracing::trace!("rx_control: ignoring CMCE-Brew/Voicegate notification (not for UMAC)");
             }
         }
     }
