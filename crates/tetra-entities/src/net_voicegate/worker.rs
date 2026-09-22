@@ -388,7 +388,8 @@ fn frame_to_mono_i16(buffer: &AudioBufferRef) -> std::collections::VecDeque<i16>
     if frames == 0 || channels == 0 {
         return std::collections::VecDeque::new();
     }
-    let buf16 = buffer.make_equivalent::<i16>();
+    let mut buf16 = buffer.make_equivalent::<i16>();
+    buffer.convert(&mut buf16);
     let audio_planes = buf16.planes();
     let planes: &[&[i16]] = audio_planes.planes();
     if channels <= 1 {
