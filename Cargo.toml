@@ -13,6 +13,10 @@ members = [
     "crates/tetra-config",
     "crates/tetra-pdus",
     "crates/tetra-entities",
+    "crates/tetra-acelp",
+
+    # Tools
+    "crates/tetra-acelp/tools/populate",
 
     # Binaries
     "bins/nexus-bs",
@@ -36,6 +40,7 @@ strip = "symbols"
 
 [workspace.dependencies]
 # Internal crates
+tetra-acelp = { path = "crates/tetra-acelp" }
 tetra-core = { path = "crates/tetra-core" }
 tetra-config = { path = "crates/tetra-config" }
 tetra-saps = { path = "crates/tetra-saps" }

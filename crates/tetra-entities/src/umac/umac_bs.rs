@@ -4040,7 +4040,7 @@ impl TetraEntityTrait for UmacBs {
 
 /// Pack UL ACELP voice bits (274 bits, one-bit-per-byte) into packed byte array for DL transmission.
 /// Handles both already-packed (35 bytes) and unpacked (274 bytes) formats.
-fn pack_ul_acelp_bits(bits: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn pack_ul_acelp_bits(bits: &[u8]) -> Option<Vec<u8>> {
     const PACKED_TCH_S_BYTES: usize = (TCH_S_CAP + 7) / 8;
 
     // Already packed format — pass through
@@ -4108,5 +4108,76 @@ mod tests {
         };
 
         assert!(!mac_access_parse_error_is_truncated_random_access(&err, 16));
+    }
+
+    fn sine_frame(base_sample: usize) -> [i16; tetra_acelp::FRAME_SAMPLES] {
+        const RATE: f64 = 8000.0;
+        const AMP: f64 = 12000.0;
+        core::array::from_fn(|i| {
+            let t = (base_sample + i) as f64;
+            (AMP * (2.0 * std::f64::consts::PI * 440.0 * t / RATE).sin()) as i16
+        })
+    }
+
+    /// The announcement voice feeder builds 274-bit TCH/S blocks with
+    /// `SpeechFrame::tch_s_block` (EN 300 395-2 clause 4) and feeds them to the
+    /// UMAC DL path in one-bit-per-byte form. Verify that form packs through the
+    /// shared `pack_ul_acelp_bits` into the canonical MSB-first 35-byte block.
+    #[test]
+    fn acelp_tch_s_block_packs_like_ul_acelp_bits() {
+        let mut enc = tetra_acelp::Encoder::new();
+        let a = enc.encode(&sine_frame(0));
+        let b = enc.encode(&sine_frame(tetra_acelp::FRAME_SAMPLES));
+        let block = tetra_acelp::SpeechFrame::tch_s_block(&a, &b);
+
+        let one_bit: Vec<u8> = block.iter().map(|&bit| bit as u8).collect();
+        assert_eq!(one_bit.len(), TCH_S_CAP);
+
+        let packed = pack_ul_acelp_bits(&one_bit).expect("274-bit input must pack");
+        assert_eq!(packed.len(), (TCH_S_CAP + 7) / 8);
+
+        let mut expected = [0u8; (TCH_S_CAP + 7) / 8];
+        for (i, &bit) in block.iter().enumerate() {
+            if bit {
+                expected[i / 8] |= 0x80 >> (i % 8);
+            }
+        }
+        assert_eq!(packed, expected.to_vec());
+
+        // An already-packed block must pass through unchanged.
+        assert_eq!(pack_ul_acelp_bits(&packed), Some(packed));
+    }
+
+    /// Round trip the full wire contract: encode 30 ms frames, join them into
+    /// 274-bit blocks, pack to 35 bytes, unpack MSB-first, and decode again.
+    /// For clean frames the decoder output must be sample-exact equal to the
+    /// encoder's local synthesis, so the packing/unpacking may corrupt nothing.
+    #[test]
+    fn acelp_block_roundtrip_through_wire_packing() {
+        const BLOCKS: usize = 17; // ~1 s of TCH/S blocks (17.36/s)
+
+        let mut enc = tetra_acelp::Encoder::new();
+        let mut dec = tetra_acelp::Decoder::new();
+
+        for block in 0..BLOCKS {
+            let (fa, synth_a) = enc.encode_with_synthesis(&sine_frame(block * 2 * tetra_acelp::FRAME_SAMPLES));
+            let (fb, synth_b) = enc.encode_with_synthesis(&sine_frame((block * 2 + 1) * tetra_acelp::FRAME_SAMPLES));
+            let bits = tetra_acelp::SpeechFrame::tch_s_block(&fa, &fb);
+
+            let one_bit: Vec<u8> = bits.iter().map(|&bit| bit as u8).collect();
+            let packed = pack_ul_acelp_bits(&one_bit).expect("274-bit input must pack");
+
+            let unpacked: Vec<bool> = (0..TCH_S_CAP).map(|i| packed[i / 8] >> (7 - i % 8) & 1 != 0).collect();
+            let mut first = [false; tetra_acelp::FRAME_BITS];
+            let mut second = [false; tetra_acelp::FRAME_BITS];
+            first.copy_from_slice(&unpacked[..tetra_acelp::FRAME_BITS]);
+            second.copy_from_slice(&unpacked[tetra_acelp::FRAME_BITS..]);
+
+            let out_a = dec.decode(&tetra_acelp::SpeechFrame::from_bits(&first), tetra_acelp::FrameQuality::good());
+            let out_b = dec.decode(&tetra_acelp::SpeechFrame::from_bits(&second), tetra_acelp::FrameQuality::good());
+
+            assert_eq!(out_a, synth_a, "frame A altered by wire packing (block {block})");
+            assert_eq!(out_b, synth_b, "frame B altered by wire packing (block {block})");
+        }
     }
 }

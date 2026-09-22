@@ -10,6 +10,7 @@ edition.workspace = true
 license-file.workspace = true
 
 [dependencies]
+tetra-acelp = { workspace = true }
 tetra-core = { workspace = true }
 tetra-config = { workspace = true }
 tetra-saps = { workspace = true }

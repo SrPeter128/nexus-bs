@@ -1,0 +1,3 @@
+# ETSI codebook data - not distributed (copyright).
+# Generate locally with: cargo run -p populate
+/src/tables.rs

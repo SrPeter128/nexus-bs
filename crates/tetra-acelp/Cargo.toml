@@ -1,0 +1,16 @@
+# Vendored from https://github.com/misadeks/libtetra-acelp (master, commit at time of vendoring)
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# See VENDOR.md for provenance and the ETSI reference data note.
+
+[package]
+name = "tetra-acelp"
+version = "0.1.0"
+edition = "2024"
+description = "Clean-room, bit-exact TETRA full-rate ACELP speech codec (ETSI EN 300 395-2, clause 4): encoder and decoder"
+repository = "https://github.com/misadeks/libtetra-acelp"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["tetra", "acelp", "codec", "speech", "audio"]
+categories = ["multimedia::audio", "encoding"]
+
+[dependencies]
