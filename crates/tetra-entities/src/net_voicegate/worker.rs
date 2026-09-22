@@ -27,6 +27,11 @@ use super::pipeline::{Pipeline, PipelineConfig, PipelineEvent};
 const EVENT_CHANNEL_CAPACITY: usize = 128;
 const COMMAND_CHANNEL_CAPACITY: usize = 16;
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+/// A live stream that delivers no bytes at all for this long is declared
+/// stalled and the connection is dropped. Longer than a second on purpose:
+/// dispatch feeds (e.g. Broadcastify) drop silent frames, so short idle
+/// gaps are normal and must not tear down a healthy connection.
+const STALL_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Events from the worker to the entity.
 #[derive(Debug)]
@@ -64,8 +69,8 @@ enum FeedChunk {
 }
 
 /// `io::Read` adapter over the feeder channel. Returns `TimedOut` when no
-/// data arrives for a second, so a stalled stream surfaces as an IoError
-/// and the worker reconnects (instead of blocking forever).
+/// data arrives for [`STALL_TIMEOUT`], so a stalled stream surfaces as an
+/// IoError and the worker reconnects (instead of blocking forever).
 struct FeedStream {
     chunk_rx: Receiver<FeedChunk>,
     pending: std::collections::VecDeque<u8>,
@@ -80,7 +85,7 @@ impl Read for FeedStream {
             self.pending.drain(..n);
             return Ok(n);
         }
-        match self.chunk_rx.recv_timeout(Duration::from_millis(1000)) {
+        match self.chunk_rx.recv_timeout(STALL_TIMEOUT) {
             Ok(FeedChunk::Data(mut chunk)) => {
                 let n = chunk.len().min(buf.len());
                 buf[..n].copy_from_slice(&chunk[..n]);
@@ -93,7 +98,10 @@ impl Read for FeedStream {
                 Err(IoError::new(ErrorKind::UnexpectedEof, msg.unwrap_or_else(|| "stream ended".to_string())))
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                Err(IoError::new(ErrorKind::TimedOut, "no stream data for 1 s"))
+                Err(IoError::new(
+                    ErrorKind::TimedOut,
+                    format!("no stream data for {} s", STALL_TIMEOUT.as_secs()),
+                ))
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 Err(IoError::new(ErrorKind::UnexpectedEof, "feeder thread gone"))
