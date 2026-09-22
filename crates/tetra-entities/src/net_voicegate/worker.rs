@@ -171,6 +171,9 @@ impl AudioSource for HttpStreamSource {
             Some(CfgAnnouncementAuth::Header { name, value }) => {
                 req = req.header(name.as_str(), value.as_str());
             }
+            Some(CfgAnnouncementAuth::Basic { username, password }) => {
+                req = req.basic_auth(username.as_str(), Some(password.as_str()));
+            }
             _ => {}
         }
         let resp = req.send().map_err(|e| format!("request failed: {e}"))?;

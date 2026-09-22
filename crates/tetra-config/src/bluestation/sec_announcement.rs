@@ -15,6 +15,8 @@ pub enum CfgAnnouncementAuth {
     Header { name: String, value: String },
     /// Query parameter appended to the stream URL: `name=value`.
     Query { name: String, value: String },
+    /// HTTP Basic authentication (e.g. Broadcastify's Icecast audio server).
+    Basic { username: String, password: String },
 }
 
 /// One configured live audio stream (the announcement voice gate's input).
@@ -29,10 +31,14 @@ pub struct CfgAnnouncementStream {
 pub struct CfgAnnouncementStreamDto {
     pub label: String,
     pub url: String,
-    /// Auth kind: "bearer" | "header" | "query".
+    /// Auth kind: "bearer" | "header" | "query" | "basic".
     pub auth_kind: Option<String>,
     pub auth_name: Option<String>,
     pub auth_value: Option<String>,
+    /// Username for `auth_kind = "basic"`.
+    pub auth_username: Option<String>,
+    /// Password for `auth_kind = "basic"`.
+    pub auth_password: Option<String>,
 }
 
 /// Local announcement voice gate configuration (dedicated subscribable talk
@@ -167,26 +173,37 @@ pub fn apply_announcement_patch(dto: CfgAnnouncementDto) -> Result<CfgAnnounceme
             return Err(format!("announcement.streams[{}].url must start with http:// or https://", i).into());
         }
         if let Some(kind) = s.auth_kind.as_deref() {
-            let value = s.auth_value.clone().ok_or_else(|| {
-                format!("announcement.streams[{}].auth_value is required when auth_kind is set", i)
-            })?;
+            let need_value = |i: usize| -> Result<String, Box<dyn std::error::Error>> {
+                s.auth_value.clone().ok_or_else(|| {
+                    format!("announcement.streams[{}].auth_value is required when auth_kind is set", i).into()
+                })
+            };
             let auth = match kind {
-                "bearer" => CfgAnnouncementAuth::Bearer(value),
+                "bearer" => CfgAnnouncementAuth::Bearer(need_value(i)?),
                 "header" => {
                     let name = s.auth_name.clone().ok_or_else(|| {
                         format!("announcement.streams[{}].auth_name is required for auth_kind=header", i)
                     })?;
-                    CfgAnnouncementAuth::Header { name, value }
+                    CfgAnnouncementAuth::Header { name, value: need_value(i)? }
                 }
                 "query" => {
                     let name = s.auth_name.clone().ok_or_else(|| {
                         format!("announcement.streams[{}].auth_name is required for auth_kind=query", i)
                     })?;
-                    CfgAnnouncementAuth::Query { name, value }
+                    CfgAnnouncementAuth::Query { name, value: need_value(i)? }
+                }
+                "basic" => {
+                    let username = s.auth_username.clone().ok_or_else(|| {
+                        format!("announcement.streams[{}].auth_username is required for auth_kind=basic", i)
+                    })?;
+                    let password = s.auth_password.clone().ok_or_else(|| {
+                        format!("announcement.streams[{}].auth_password is required for auth_kind=basic", i)
+                    })?;
+                    CfgAnnouncementAuth::Basic { username, password }
                 }
                 other => {
                     return Err(format!(
-                        "announcement.streams[{}].auth_kind must be bearer, header, or query (got {:?})",
+                        "announcement.streams[{}].auth_kind must be bearer, header, query, or basic (got {:?})",
                         i, other
                     )
                     .into())
@@ -194,8 +211,16 @@ pub fn apply_announcement_patch(dto: CfgAnnouncementDto) -> Result<CfgAnnounceme
             };
             streams.push(CfgAnnouncementStream { label: s.label, url: s.url, auth: Some(auth) });
         } else {
-            if s.auth_name.is_some() || s.auth_value.is_some() {
-                return Err(format!("announcement.streams[{}]: auth_name/auth_value require auth_kind", i).into());
+            if s.auth_name.is_some()
+                || s.auth_value.is_some()
+                || s.auth_username.is_some()
+                || s.auth_password.is_some()
+            {
+                return Err(format!(
+                    "announcement.streams[{}]: auth_name/auth_value/auth_username/auth_password require auth_kind",
+                    i
+                )
+                .into());
             }
             streams.push(CfgAnnouncementStream { label: s.label, url: s.url, auth: None });
         }
@@ -222,4 +247,70 @@ pub fn apply_announcement_patch(dto: CfgAnnouncementDto) -> Result<CfgAnnounceme
         stream_loss_grace_ms: dto.stream_loss_grace_ms,
         max_call_duration_secs: dto.max_call_duration_secs,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stream_dto(auth_kind: Option<&str>) -> CfgAnnouncementStreamDto {
+        CfgAnnouncementStreamDto {
+            label: "main".to_string(),
+            url: "https://example.org/stream.mp3".to_string(),
+            auth_kind: auth_kind.map(str::to_string),
+            auth_name: None,
+            auth_value: None,
+            auth_username: (auth_kind == Some("basic")).then(|| "user".to_string()),
+            auth_password: (auth_kind == Some("basic")).then(|| "secret".to_string()),
+        }
+    }
+
+    fn dto_with_stream(s: CfgAnnouncementStreamDto) -> CfgAnnouncementDto {
+        CfgAnnouncementDto {
+            enabled: true,
+            gssi: 100,
+            issi: 255,
+            streams: vec![s],
+            active_stream: "main".to_string(),
+            vad_start_dbfs: -40.0,
+            vad_stop_dbfs: -50.0,
+            vad_start_ms: 150,
+            silence_timeout_ms: 4000,
+            stream_loss_grace_ms: 15000,
+            max_call_duration_secs: 600,
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn basic_auth_maps_to_cfg_without_auth_value() {
+        let cfg = apply_announcement_patch(dto_with_stream(stream_dto(Some("basic")))).expect("basic auth must parse");
+        let auth = &cfg.streams[0].auth.as_ref().expect("auth must be set");
+        match auth {
+            CfgAnnouncementAuth::Basic { username, password } => {
+                assert_eq!(username, "user");
+                assert_eq!(password, "secret");
+            }
+            other => panic!("expected Basic, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn basic_auth_requires_username_and_password() {
+        let mut s = stream_dto(Some("basic"));
+        s.auth_username = None;
+        let err = apply_announcement_patch(dto_with_stream(s)).expect_err("missing username must fail");
+        assert!(err.to_string().contains("auth_username"), "{}", err);
+
+        let mut s = stream_dto(Some("basic"));
+        s.auth_password = None;
+        let err = apply_announcement_patch(dto_with_stream(s)).expect_err("missing password must fail");
+        assert!(err.to_string().contains("auth_password"), "{}", err);
+    }
+
+    #[test]
+    fn unknown_auth_kind_rejected() {
+        let err = apply_announcement_patch(dto_with_stream(stream_dto(Some("digest")))).expect_err("unknown kind must fail");
+        assert!(err.to_string().contains("auth_kind"), "{}", err);
+    }
 }

@@ -288,5 +288,13 @@ text = "Nexus-BS"
 # [[announcement.streams]]
 # label = "main"
 # url = "https://example.org/stream.mp3"
-# # auth_kind = "bearer"        # or "header" / "query"
+# # auth_kind = "bearer"        # or "header" / "query" / "basic"
 # # auth_value = "secret"       # header name: auth_name
+#
+# HTTP Basic auth, e.g. Broadcastify's Icecast audio server:
+# [[announcement.streams]]
+# label = "dispatch"
+# url = "https://audio.broadcastify.com/12345.mp3"
+# auth_kind = "basic"
+# auth_username = "your-broadcastify-user"
+# auth_password = "your-broadcastify-password"

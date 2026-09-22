@@ -88,6 +88,22 @@ Auth kinds:
 | `bearer` | sends `Authorization: Bearer <auth_value>` |
 | `header` + `auth_name` | sends `<auth_name>: <auth_value>` (e.g. `Cookie`) |
 | `query` + `auth_name` | appends `?auth_name=<auth_value>` to the URL |
+| `basic` + `auth_username` + `auth_password` | HTTP Basic auth (e.g. Broadcastify) |
+
+**Broadcastify example** (premium account, feed `32602`):
+
+```toml
+[[announcement.streams]]
+label = "dispatch"
+url = "https://audio.broadcastify.com/32602.mp3"
+auth_kind = "basic"
+auth_username = "<your-broadcastify-user>"
+auth_password = "<your-broadcastify-password>"
+```
+
+The static audio URL per feed is `https://audio.broadcastify.com/<feed-id>.mp3`
+(the feed page shows it under *Static Audio URL* and requires a premium
+account to play).
 
 **Note:** tokens/cookies of premium services usually expire. When the stream
 stops working, capture again, update `url`/`auth_value`, and restart the
