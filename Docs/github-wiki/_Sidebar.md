@@ -8,6 +8,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 - [Start Here](Home)
 - [Easy Install (.deb)](Install-from-APT)
 - [Build From Source](Build-from-Source)
+- [Announcement Voice Gate](Announcement-Voice-Gate)
 
 ## Română
 
@@ -20,6 +21,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 - [Start hier](Home-de)
 - [Einfache Installation (.deb)](Install-from-APT-de)
 - [Aus Quellen bauen](Build-from-Source-de)
+- [Ankündigungs-TG (Live-Audio)](Announcement-Voice-Gate-de)
 
 ## Español
 
