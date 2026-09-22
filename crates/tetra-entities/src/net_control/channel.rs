@@ -137,6 +137,10 @@ pub fn build_all_control_links() -> (HashMap<TetraEntity, CommandDispatcher>, Ha
     dispatchers.insert(TetraEntity::Sndcp, dispatcher);
     endpoints.insert(TetraEntity::Sndcp, endpoint);
 
+    let (dispatcher, endpoint) = make_control_link();
+    dispatchers.insert(TetraEntity::Voicegate, dispatcher);
+    endpoints.insert(TetraEntity::Voicegate, endpoint);
+
     (dispatchers, endpoints)
 }
 

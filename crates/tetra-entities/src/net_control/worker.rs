@@ -129,6 +129,9 @@ impl<T: NetworkTransport> ControlWorker<T> {
             ControlCommand::AddLiveSds { .. } => TetraEntity::Cmce,
             ControlCommand::DeleteLiveSds { .. } => TetraEntity::Cmce,
             ControlCommand::ClearLiveSds => TetraEntity::Cmce,
+            ControlCommand::VoicegateStart { .. } | ControlCommand::VoicegateStop { .. } | ControlCommand::VoicegateSelectStream { .. } => {
+                TetraEntity::Voicegate
+            }
             ControlCommand::CommandA { .. } => TetraEntity::Mm,
             ControlCommand::TestCmdB { .. } => TetraEntity::Cmce,
         }

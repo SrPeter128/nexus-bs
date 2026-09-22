@@ -19,6 +19,7 @@ use tetra_core::{PRODUCT_NAME, PRODUCT_USER_AGENT, PRODUCT_VERSION_TAG, STACK_VE
 use tetra_entities::MessageRouter;
 use tetra_entities::net_brew::entity::BrewEntity;
 use tetra_entities::net_brew::new_websocket_transport;
+use tetra_entities::net_voicegate::VoicegateEntity;
 use tetra_entities::net_telemetry::worker::TelemetryWorker;
 use tetra_entities::net_telemetry::{
     TELEMETRY_HEARTBEAT_INTERVAL, TELEMETRY_HEARTBEAT_TIMEOUT, TELEMETRY_PROTOCOL_VERSION, TelemetrySource, telemetry_channel,
@@ -223,6 +224,21 @@ fn build_bs_stack(cfg: &mut SharedConfig) -> (MessageRouter, Option<TelemetrySou
     router.register_entity(Box::new(mm));
     router.register_entity(Box::new(sndcp));
     router.register_entity(Box::new(cmce));
+
+    // Register the local announcement voice gate if enabled
+    if let Some(ref ann_cfg) = cfg.config().announcement {
+        if ann_cfg.enabled {
+            let mut voicegate = VoicegateEntity::new(cfg.clone(), c_e.remove(&TetraEntity::Voicegate));
+            if let Some(ref sink) = tsink {
+                voicegate.set_telemetry_sink(sink.clone());
+            }
+            router.register_entity(Box::new(voicegate));
+            eprintln!(
+                " -> Announcement voice gate enabled (gssi={}, issi={}, stream={:?})",
+                ann_cfg.gssi, ann_cfg.issi, ann_cfg.active_stream
+            );
+        }
+    }
 
     // Drop all command links that were not given to a TetraEntity
     for (entity, dispatcher) in c_e.into_iter() {

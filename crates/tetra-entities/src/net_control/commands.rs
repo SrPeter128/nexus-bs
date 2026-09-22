@@ -153,6 +153,13 @@ pub enum ControlCommand {
     /// Remove all live SDS messages from the queue.
     ClearLiveSds,
 
+    /// Force-start an announcement group call now (bypasses VAD start).
+    VoicegateStart { handle: u32 },
+    /// Force-stop the current announcement speech period.
+    VoicegateStop { handle: u32 },
+    /// Switch the active announcement stream by label.
+    VoicegateSelectStream { handle: u32, label: String },
+
     /// Placeholder command A.
     CommandA { handle: u32, parameter: u32 },
     /// Placeholder command B.
@@ -188,5 +195,10 @@ pub enum ControlResponse {
     KickMsResponse {
         issi: u32,
         success: bool,
+    },
+    VoicegateResponse {
+        handle: u32,
+        ok: bool,
+        detail: String,
     },
 }

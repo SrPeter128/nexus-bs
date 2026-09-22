@@ -12,6 +12,7 @@ license-file.workspace = true
 [dependencies]
 tetra-acelp = { workspace = true }
 tetra-core = { workspace = true }
+symphonia = { workspace = true }
 tetra-config = { workspace = true }
 tetra-saps = { workspace = true }
 tetra-pdus = { workspace = true }

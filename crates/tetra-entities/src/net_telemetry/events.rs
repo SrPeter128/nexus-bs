@@ -60,6 +60,9 @@ pub enum TelemetryEvent {
     BrewConnected { connected: bool, server_version: u8 },
     /// SDS message activity (local delivery or group)
     SdsActivity { source_issi: u32, dest_issi: u32 },
+    /// Local announcement voice gate state changed. `state`: 0 idle,
+    /// 1 starting, 2 speaking, 3 stopping.
+    VoicegateState { state: u8, stream: String, call_id: Option<u16> },
     /// Voice frame activity on a traffic timeslot (UL or DL)
     TsVoiceActivity { ts: u8 },
     /// Fast visual feed for the RF dashboard: spectrum + constellation + RMS/peak.

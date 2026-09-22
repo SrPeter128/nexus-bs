@@ -1310,6 +1310,16 @@ impl DashboardServer {
                 TelemetryEvent::HealthSnapshot(snapshot) => {
                     s.last_health = Some(snapshot.clone());
                 }
+                TelemetryEvent::VoicegateState { state, stream, call_id } => {
+                    s.voicegate = Some(crate::net_dashboard::state::VoicegateInfo {
+                        state: *state,
+                        stream: stream.clone(),
+                        speaking: *state == 2,
+                        call_id: *call_id,
+                        ts: None,
+                    });
+                    s.push_log("INFO", format!("Voice gate state {} (stream {stream:?}, call {call_id:?})", state));
+                }
             }
         }
         if let Some(json) = msg {
@@ -1539,6 +1549,9 @@ fn event_to_ws_msg(event: &TelemetryEvent) -> Option<String> {
             "type": "health",
             "snapshot": snapshot,
         }),
+        TelemetryEvent::VoicegateState { state, stream, call_id } => {
+            serde_json::json!({"type":"voicegate_state","state":state,"stream":stream,"speaking":*state==2,"call_id":call_id})
+        }
     };
     serde_json::to_string(&v).ok()
 }
@@ -1616,6 +1629,23 @@ fn send_control_cmd(cmd_tx: &Arc<Mutex<Option<CmdSender>>>, cmd: ControlCommand)
         }
     }
     false
+}
+
+static VOICEGATE_HANDLE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+fn next_voicegate_handle() -> u32 {
+    VOICEGATE_HANDLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Consume the remaining HTTP request headers after the request line (buffered).
+fn drain_http_headers_from_buf(buf: &mut impl BufRead) {
+    loop {
+        let mut line = String::new();
+        let _ = buf.read_line(&mut line);
+        if line == "\r\n" || line.is_empty() || line == "\n" {
+            break;
+        }
+    }
 }
 
 fn serve_service_command(stream: TcpStream, cmd_tx: &Arc<Mutex<Option<CmdSender>>>, label: &str, cmd: ControlCommand) {
@@ -4366,6 +4396,36 @@ fn handle_connection(
         };
         let body_str = String::from_utf8_lossy(&body);
         serve_wx_post(buf.into_inner(), &shared_config, &config_path, body_str.as_ref());
+    } else if request_matches(&req_line, "POST", "/api/voicegate/start") {
+        let mut buf = BufReader::new(stream);
+        drain_http_headers_from_buf(&mut buf);
+        let queued = send_control_cmd(&cmd_tx, ControlCommand::VoicegateStart { handle: next_voicegate_handle() });
+        http_response(buf.into_inner(), if queued { 200 } else { 503 }, if queued { "OK" } else { "voice gate unavailable" });
+    } else if request_matches(&req_line, "POST", "/api/voicegate/stop") {
+        let mut buf = BufReader::new(stream);
+        drain_http_headers_from_buf(&mut buf);
+        let queued = send_control_cmd(&cmd_tx, ControlCommand::VoicegateStop { handle: next_voicegate_handle() });
+        http_response(buf.into_inner(), if queued { 200 } else { 503 }, if queued { "OK" } else { "voice gate unavailable" });
+    } else if request_matches(&req_line, "POST", "/api/voicegate/stream") {
+        let mut buf = BufReader::new(stream);
+        let body = match read_http_body_from_buf(&mut buf, DASHBOARD_SMALL_BODY_MAX) {
+            Ok(body) => body,
+            Err(e) => {
+                respond_http_body_error(buf.into_inner(), e);
+                return;
+            }
+        };
+        let label = serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("label").and_then(|l| l.as_str()).map(str::to_string))
+            .filter(|l| !l.is_empty() && l.len() <= 64);
+        match label {
+            Some(label) => {
+                let queued = send_control_cmd(&cmd_tx, ControlCommand::VoicegateSelectStream { handle: next_voicegate_handle(), label });
+                http_response(buf.into_inner(), if queued { 200 } else { 503 }, if queued { "OK" } else { "voice gate unavailable" });
+            }
+            None => http_response(buf.into_inner(), 400, "invalid body; expected {\"label\":\"...\"}"),
+        }
     } else if request_matches(&req_line, "GET", "/api/config") {
         let mut buf = BufReader::new(stream);
         loop {
@@ -4696,6 +4756,7 @@ fn dashboard_snapshot_json(state: &DashboardState) -> String {
     let last_sdr_health = s.last_sdr_health.clone();
     let last_sys_health = s.last_sys_health.clone();
     let last_health = s.last_health.clone();
+    let voicegate = s.voicegate.clone();
     drop(s);
 
     serde_json::to_string(&serde_json::json!({
@@ -4713,6 +4774,7 @@ fn dashboard_snapshot_json(state: &DashboardState) -> String {
         "last_sdr_health": last_sdr_health,
         "last_sys_health": last_sys_health,
         "last_health": last_health,
+        "voicegate": voicegate,
     }))
     .unwrap_or_else(|_| r#"{"type":"snapshot","ms":[],"calls":[],"log":[],"last_heard":[]}"#.to_string())
 }

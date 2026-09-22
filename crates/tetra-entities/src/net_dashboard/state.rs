@@ -35,6 +35,17 @@ pub struct CallState {
     pub secondary_ts: Option<u8>,
 }
 
+/// Local announcement voice gate state (mirrored from TelemetryEvent::VoicegateState)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VoicegateInfo {
+    /// 0 idle, 1 starting, 2 speaking, 3 stopping
+    pub state: u8,
+    pub stream: String,
+    pub speaking: bool,
+    pub call_id: Option<u16>,
+    pub ts: Option<u8>,
+}
+
 /// Log entry
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {
@@ -77,6 +88,8 @@ pub struct DashboardStateInner {
     pub last_sys_health: Option<SysHealthSnapshot>,
     /// Most recent Nexus-BS operational health snapshot.
     pub last_health: Option<crate::health::HealthSnapshot>,
+    /// Most recent local announcement voice gate state.
+    pub voicegate: Option<VoicegateInfo>,
 }
 
 /// Fast-path visual snapshot — spectrum + IQ + RMS/peak. Refreshed several times
@@ -180,6 +193,7 @@ impl DashboardStateInner {
             last_sdr_health: None,
             last_sys_health: None,
             last_health: None,
+            voicegate: None,
         }
     }
 

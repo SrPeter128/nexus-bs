@@ -1134,6 +1134,10 @@ td code{
       <span class="nav-label" data-i18n="calls">CALLS</span>
       <span class="nav-badge" id="badge-calls" style="display:none">0</span>
     </div>
+    <div class="nav-item" onclick="showPage('voicegate',this)" id="nav-voicegate">
+      <span class="nav-icon">📢</span>
+      <span class="nav-label" data-i18n="voicegate">ANNOUNCEMENT</span>
+    </div>
     <div class="nav-item" onclick="showPage('lastheard',this)" id="nav-lastheard">
       <span class="nav-icon">🎙</span>
       <span class="nav-label" data-i18n="lastheard">LAST HEARD</span>
@@ -1391,6 +1395,36 @@ td code{
               </tr></thead>
               <tbody id="calls-tbody"></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ANNOUNCEMENT VOICE GATE ── -->
+    <div class="page" id="page-voicegate">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" data-i18n="voicegate">Announcement</div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span class="conn-led" id="vgLed"></span>
+            <span id="vgStateText" style="font-weight:600">—</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:14px">
+            <div>Stream: <span id="vgStream">—</span></div>
+            <div>Call: <span id="vgCall">—</span></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            <button class="btn btn-sm" onclick="vgStart()">Start</button>
+            <button class="btn btn-sm" onclick="vgStop()">Stop</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="vgStreamLabel" type="text" placeholder="stream label" style="flex:1;min-width:140px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">
+            <button class="btn btn-sm" onclick="vgSelectStream()">Switch stream</button>
+          </div>
+          <div style="margin-top:10px;font-size:12px;opacity:.6">
+            Data source: live streams configured in <code>[announcement]</code> of the station config.
           </div>
         </div>
       </div>
@@ -2036,7 +2070,7 @@ const LANGS={
   en:{
     bts_ip:'BTS IP',offline:'OFFLINE',online:'ONLINE',
     brew_online:'ONLINE',brew_offline:'OFFLINE',
-    stations:'Radios',calls:'Calls',lastheard:'Last Heard',log:'Log',rf:'RF',config:'Config',about:'About',
+    stations:'Radios',calls:'Calls',lastheard:'Last Heard',voicegate:'Announcement',log:'Log',rf:'RF',config:'Config',about:'About',
     rf_freq:'Center freq',rf_rate:'Sample rate',rf_rms:'RMS',rf_peak:'Peak',rf_age:'Snapshot',
     rf_waiting:'waiting…',rf_live:'live',rf_stale:'stale',
     rf_spectrum:'TX DSP Spectrum (pre-PA)',rf_constellation:'TX DSP Constellation',
@@ -2107,7 +2141,7 @@ const LANGS={
   ro:{
     bts_ip:'IP BTS',offline:'DECONECTAT',online:'CONECTAT',
     brew_online:'ONLINE',brew_offline:'OFFLINE',
-    stations:'Radiouri',calls:'Apeluri',lastheard:'Ultima Activitate',log:'Log',rf:'RF',config:'Config',about:'Despre',
+    stations:'Radiouri',calls:'Apeluri',lastheard:'Ultima Activitate',voicegate:'Anunț',log:'Log',rf:'RF',config:'Config',about:'Despre',
     rf_freq:'Frecvență centru',rf_rate:'Rată eșantion',rf_rms:'RMS',rf_peak:'Vârf',rf_age:'Captură',
     rf_waiting:'în așteptare…',rf_live:'live',rf_stale:'expirat',
     rf_spectrum:'Spectru TX DSP (pre-PA)',rf_constellation:'Constelație TX DSP',
@@ -2177,7 +2211,7 @@ const LANGS={
   de:{
     bts_ip:'BTS-IP',offline:'OFFLINE',online:'ONLINE',
     brew_online:'ONLINE',brew_offline:'OFFLINE',
-    stations:'Radios',calls:'Anrufe',lastheard:'Zuletzt Gehört',log:'Log',rf:'RF',config:'Config',about:'About',
+    stations:'Radios',calls:'Anrufe',lastheard:'Zuletzt Gehört',voicegate:'Ankündigung',log:'Log',rf:'RF',config:'Config',about:'About',
     rf_freq:'Mittenfrequenz',rf_rate:'Abtastrate',rf_rms:'RMS',rf_peak:'Spitze',rf_age:'Aufnahme',
     rf_waiting:'wartet…',rf_live:'live',rf_stale:'veraltet',
     rf_spectrum:'TX-DSP-Spektrum (vor PA)',rf_constellation:'TX-DSP-Konstellation',
@@ -2247,7 +2281,7 @@ const LANGS={
   es:{
     bts_ip:'IP BTS',offline:'SIN CONEXIÓN',online:'EN LÍNEA',
     brew_online:'EN LÍNEA',brew_offline:'SIN CONEXIÓN',
-    stations:'Radios',calls:'Llamadas',lastheard:'Última Actividad',log:'Log',rf:'RF',config:'Config',about:'About',
+    stations:'Radios',calls:'Llamadas',lastheard:'Última Actividad',voicegate:'Aviso',log:'Log',rf:'RF',config:'Config',about:'About',
     rf_freq:'Frecuencia central',rf_rate:'Tasa de muestreo',rf_rms:'RMS',rf_peak:'Pico',rf_age:'Captura',
     rf_waiting:'esperando…',rf_live:'en vivo',rf_stale:'obsoleto',
     rf_spectrum:'Espectro TX DSP (pre-PA)',rf_constellation:'Constelación TX DSP',
@@ -2317,7 +2351,7 @@ const LANGS={
   hu:{
     bts_ip:'BTS IP',offline:'OFFLINE',online:'ONLINE',
     brew_online:'ONLINE',brew_offline:'OFFLINE',
-    stations:'Rádiók',calls:'Hívások',lastheard:'Utoljára Hallott',log:'Napló',rf:'RF',config:'Konfig',about:'About',
+    stations:'Rádiók',calls:'Hívások',lastheard:'Utoljára Hallott',voicegate:'Közlemény',log:'Napló',rf:'RF',config:'Konfig',about:'About',
     rf_freq:'Központi frekvencia',rf_rate:'Mintavételezési ráta',rf_rms:'RMS',rf_peak:'Csúcs',rf_age:'Pillanatkép',
     rf_waiting:'várakozás…',rf_live:'élő',rf_stale:'elavult',
     rf_spectrum:'TX DSP spektrum (PA előtt)',rf_constellation:'TX DSP konstelláció',
@@ -2379,7 +2413,7 @@ const LANGS={
   zh:{
     bts_ip:'BTS IP',offline:'离线',online:'在线',
     brew_online:'在线',brew_offline:'离线',
-    stations:'终端',calls:'通话',lastheard:'最近通话',log:'日志',rf:'RF',config:'配置',about:'About',
+    stations:'终端',calls:'通话',lastheard:'最近通话',voicegate:'通告',log:'日志',rf:'RF',config:'配置',about:'About',
     rf_freq:'中心频率',rf_rate:'采样率',rf_rms:'RMS',rf_peak:'峰值',rf_age:'快照',
     rf_waiting:'等待中…',rf_live:'实时',rf_stale:'已过期',
     rf_spectrum:'TX DSP 频谱（功放前）',rf_constellation:'TX DSP 星座图',
@@ -2454,7 +2488,7 @@ function applyLang(){
   document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.getAttribute('data-i18n')));
   document.querySelectorAll('[data-i18n-tab]').forEach(el=>el.textContent=t(el.getAttribute('data-i18n-tab')));
   // Update nav labels
-  ['stations','calls','lastheard','log','rf','config','wifi','system','about'].forEach(p=>{
+  ['stations','calls','voicegate','lastheard','log','rf','config','wifi','system','about'].forEach(p=>{
     const el=document.querySelector(`#nav-${p} .nav-label`);
     if(el)el.textContent=t(p);
   });
@@ -2495,7 +2529,7 @@ function closeMobileSidebar(){
 }
 
 // ── Page navigation ───────────────────────────────────────────────────────
-const PAGE_TITLES={stations:'stations',calls:'calls',lastheard:'lastheard',log:'log',rf:'rf',config:'config',wifi:'wifi',system:'system',about:'about'};
+const PAGE_TITLES={stations:'stations',calls:'calls',voicegate:'voicegate',lastheard:'lastheard',log:'log',rf:'rf',config:'config',wifi:'wifi',system:'system',about:'about'};
 function showPage(name,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -2822,7 +2856,7 @@ async function wifiCall(url, body){
 function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
 
 // ── State + WS ────────────────────────────────────────────────────────────
-let ws=null,state={ms:{},calls:{},lastHeard:[],brewOnline:false,brewVer:0},sdsDest=0;
+let ws=null,state={ms:{},calls:{},lastHeard:[],brewOnline:false,brewVer:0,voicegate:null},sdsDest=0;
 const logFilter=()=>document.getElementById('log-filter').value;
 
 function showFallbackBanner(reason){
@@ -2892,6 +2926,7 @@ function handleMsg(msg){
       });
       if(msg.log&&msg.log.length){document.getElementById('log-container').innerHTML='';msg.log.forEach(e=>appendLog(e));}
       setBrewStatus(!!msg.brew_online,msg.brew_version||0);
+      state.voicegate=msg.voicegate||null;renderVoicegate();
       if(msg.fallback_config_active){showFallbackBanner(msg.fallback_config_reason||'');}
       // If the server already has recent RF snapshots, paint them instantly
       // so the RF page has data before the next emit cycle.
@@ -2945,6 +2980,52 @@ function handleMsg(msg){
     case 'tx_quality':handleTxQuality(msg);break;
     case 'sdr_health':handleSdrHealth(msg);break;
     case 'sys_health':handleSysHealth(msg);break;
+    case 'voicegate_state':
+      state.voicegate={state:msg.state,stream:msg.stream,speaking:msg.speaking,call_id:msg.call_id};
+      renderVoicegate();break;
+  }
+}
+
+// ── Announcement voice gate ───────────────────────────────────────────────
+const VG_STATE_NAMES={0:'Idle',1:'Starting',2:'Speaking',3:'Stopping'};
+function renderVoicegate(){
+  const vg=state.voicegate;
+  const led=document.getElementById('vgLed');
+  const txt=document.getElementById('vgStateText');
+  const stream=document.getElementById('vgStream');
+  const call=document.getElementById('vgCall');
+  if(!led||!txt)return;
+  if(!vg){
+    led.className='conn-led';txt.textContent='Disabled';txt.style.color='var(--text)';
+    stream.textContent='—';call.textContent='—';return;
+  }
+  const on=vg.speaking;
+  led.className='conn-led '+(on?'on':'');
+  txt.textContent=VG_STATE_NAMES[vg.state]||('State '+vg.state);
+  txt.style.color=on?'var(--ok)':'var(--text)';
+  stream.textContent=vg.stream||'—';
+  call.textContent=vg.call_id!=null?('call '+vg.call_id):'—';
+}
+async function vgPost(path){
+  try{
+    const r=await fetch(path,{method:'POST'});
+    appendLog({ts:new Date().toTimeString().slice(0,12),level:r.ok?'INFO':'ERROR',msg:'Voicegate '+path+' -> '+(r.ok?'OK':r.status)});
+  }catch(e){
+    appendLog({ts:new Date().toTimeString().slice(0,12),level:'ERROR',msg:'Voicegate '+path+' -> '+e});
+  }
+}
+function vgStart(){vgPost('/api/voicegate/start');}
+function vgStop(){vgPost('/api/voicegate/stop');}
+async function vgSelectStream(){
+  const el=document.getElementById('vgStreamLabel');
+  const label=(el&&el.value||'').trim();
+  if(!label)return;
+  try{
+    const r=await fetch('/api/voicegate/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label})});
+    appendLog({ts:new Date().toTimeString().slice(0,12),level:r.ok?'INFO':'ERROR',msg:'Voicegate stream '+label+' -> '+(r.ok?'OK':r.status)});
+    if(r.ok)el.value='';
+  }catch(e){
+    appendLog({ts:new Date().toTimeString().slice(0,12),level:'ERROR',msg:'Voicegate stream '+label+' -> '+e});
   }
 }
 
@@ -2994,7 +3075,7 @@ function scheduleRenderStations(){
   const schedule=window.requestAnimationFrame||((fn)=>setTimeout(fn,16));
   schedule(()=>{stationRenderQueued=false;renderStations();});
 }
-function renderAll(){renderStations();renderCalls();renderLastHeard();updateTsBlocks();}
+function renderAll(){renderStations();renderCalls();renderLastHeard();renderVoicegate();updateTsBlocks();}
 
 // ── TS Visualizer ─────────────────────────────────────────────────────────
 // tsState[ts-1]: {call_id, call_type, label, sub, voice_ts, started_at}

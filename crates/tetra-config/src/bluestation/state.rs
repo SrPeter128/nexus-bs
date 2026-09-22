@@ -335,6 +335,21 @@ pub struct WxRuntimeOverride {
     pub periodic_interval_secs: u64,
 }
 
+/// Runtime state of the local announcement voice gate (read by the dashboard).
+#[derive(Debug, Clone, Default)]
+pub struct VoicegateRuntimeState {
+    /// 0 idle, 1 starting, 2 speaking, 3 stopping
+    pub state: u8,
+    /// Label of the active stream.
+    pub stream: String,
+    /// Whether the gate currently has a granted floor and is feeding audio.
+    pub speaking: bool,
+    /// Active announcement call id (None when idle/stopping).
+    pub call_id: Option<u16>,
+    /// Traffic timeslot of the announcement circuit.
+    pub ts: Option<u8>,
+}
+
 /// Mutable, stack-editable state (mutex-protected).
 #[derive(Debug, Clone)]
 pub struct StackState {
@@ -367,6 +382,8 @@ pub struct StackState {
     pub issi_whitelist_override: Option<Vec<u32>>,
     /// Runtime override for the WX/METAR service (dashboard toggle). See WxRuntimeOverride.
     pub wx_override: Option<WxRuntimeOverride>,
+    /// Runtime state of the local announcement voice gate (None = feature off).
+    pub voicegate: Option<VoicegateRuntimeState>,
 }
 
 #[cfg(test)]
@@ -536,6 +553,7 @@ impl Default for StackState {
             next_live_sds_id: 1,
             issi_whitelist_override: None,
             wx_override: None,
+            voicegate: None,
         }
     }
 }
