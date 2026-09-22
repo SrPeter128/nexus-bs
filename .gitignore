@@ -1,6 +1,7 @@
 /target/
 /compiled_distribution/
 /deps/
+/.dev-run/
 .DS_Store
 .private_backups/
 .local/
